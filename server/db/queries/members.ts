@@ -74,6 +74,22 @@ export async function touchFleetMembers(fleetSessionId: string, characterIds: nu
   );
 }
 
+export async function getLatestPresence(
+  fleetSessionId: string,
+  characterId: number,
+): Promise<{ shipTypeId: number; solarSystemId: number } | null> {
+  const { rows } = await query(
+    `SELECT ship_type_id, solar_system_id
+       FROM member_presence
+      WHERE fleet_session_id = $1 AND character_id = $2
+      ORDER BY recorded_at DESC
+      LIMIT 1`,
+    [fleetSessionId, characterId],
+  );
+  if (!rows.length) return null;
+  return { shipTypeId: rows[0].ship_type_id, solarSystemId: rows[0].solar_system_id };
+}
+
 export async function upsertFleetMember(fleetSessionId: string, characterId: number) {
   await query(
     `INSERT INTO fleet_members (fleet_session_id, character_id)

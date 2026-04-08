@@ -1,7 +1,9 @@
 /**
  * nonCombatGroups.ts — Set of EVE Online ship group IDs considered non-combat.
  *
- * Used by useParticipation.ts to flag members not contributing to combat.
+ * @deprecated Use {@link shipRoles.ts} classifyShipRole() + isNonCombat() instead.
+ * This file is retained for backward compatibility only. shipRoles.ts is the
+ * single source of truth for ship role classification.
  */
 
 export const NON_COMBAT_GROUP_IDS: ReadonlySet<number> = new Set([

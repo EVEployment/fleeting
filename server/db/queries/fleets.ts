@@ -42,6 +42,10 @@ export async function closeFleet(id: string) {
   );
 }
 
+export async function deleteFleet(id: string) {
+  await query('DELETE FROM fleet_sessions WHERE id = $1', [id]);
+}
+
 export async function getAllFleets({ page = 1, limit = 20 } = {}) {
   const offset = (page - 1) * limit;
   const { rows } = await query(

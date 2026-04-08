@@ -20,12 +20,10 @@ export default async function authRoutes(fastify: FastifyInstance) {
 
   // GET /api/me — current session info
   fastify.get('/api/me', { preHandler: requireAuth }, async (req, reply) => {
-    const s = req.session as unknown as Record<string, unknown>;
     return reply.send({
-      userId:     s['userId'],
-      name:       s['name'],
-      roles:      s['roles'] ?? [],
-      characters: s['characters'] ?? [],
+      userId:     req.session.userId,
+      roles:      req.session.roles      ?? [],
+      characters: req.session.characters ?? [],
     });
   });
 
@@ -33,8 +31,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
   // Enforces per-fleet access: war_commanders may subscribe to any fleet;
   // other users may only subscribe to fleets they are a member or FC of.
   fastify.get('/api/nchan/auth', async (req, reply) => {
-    const s = req.session as unknown as Record<string, unknown>;
-    if (!s['userId']) return reply.code(403).send('Forbidden');
+    if (!req.session.userId) return reply.code(403).send('Forbidden');
 
     // Nchan forwards the original subscriber URI via X-Original-URI, e.g.:
     //   /sub/fleet/uuid1,uuid2
@@ -51,12 +48,12 @@ export default async function authRoutes(fastify: FastifyInstance) {
     }
 
     // War commanders may observe any fleet
-    const roles = (s['roles'] as string[] | undefined) ?? [];
+    const roles = req.session.roles ?? [];
     if (roles.includes('war_commander')) return reply.code(200).send('OK');
 
     // For FC / pilot: verify each requested fleet ID is accessible to this user.
     // A fleet is accessible when the user's character is either the FC or a fleet member.
-    const characters = (s['characters'] as Array<{ id: number }> | undefined) ?? [];
+    const characters = req.session.characters ?? [];
     const charIds    = characters.map((c) => c.id);
 
     if (charIds.length === 0) return reply.code(403).send('Forbidden');

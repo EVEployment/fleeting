@@ -15,6 +15,7 @@ import type { FastifyRequest } from 'fastify';
 import { exchangeEveToken } from './auth.js';
 import { getFleetMembers } from './esi.js';
 import { insertPresenceBatch, touchFleetMembers } from '../db/queries/members.js';
+import * as mem from '../store/memcached.js';
 import { getOpenFleets } from '../db/queries/fleets.js';
 import { activeFleetTrackers, fleetTrackerPollsTotal } from './metrics.js';
 
@@ -91,12 +92,21 @@ async function poll(
 
     await insertPresenceBatch(records);
     await touchFleetMembers(fleetSessionId, members.map((m: { character_id: number }) => m.character_id));
+    // Update presence cache so pilot.ts POST handler can enrich snapshots without DB queries
+    for (const r of records) {
+      mem.set(`presence:${fleetSessionId}:${r.characterId}`, {
+        shipTypeId: r.shipTypeId, solarSystemId: r.solarSystemId,
+      }, 60).catch(() => {});
+    }
     fleetTrackerPollsTotal.inc({ result: 'success' });
   } catch (err: unknown) {
     const status = (err as { status?: number }).status;
     fleetTrackerPollsTotal.inc({ result: 'error' });
     if (status === 404) {
       console.warn(`[memberTracker] Fleet ${fleetSessionId} not found on ESI — stopping tracker`);
+      stopTracking(fleetSessionId);
+    } else if (status === 401 || status === 403) {
+      console.warn(`[memberTracker] Auth failed (${status}) for fleet ${fleetSessionId} — stopping tracker. FC must re-open fleet to resume.`);
       stopTracking(fleetSessionId);
     } else {
       console.error(

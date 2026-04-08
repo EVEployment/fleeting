@@ -37,6 +37,17 @@ export interface PilotSnapshot {
   mined?: number;
 }
 
+export interface MemberSnapshot {
+  dpsOut?: number; dpsIn?: number;
+  logiOut?: number; logiIn?: number;
+  capTransfered?: number; capRecieved?: number;
+  capDamageOut?: number; capDamageIn?: number;
+  mined?: number;
+  shipTypeId?: number; solarSystemId?: number;
+  hitQualityDistribution?: Record<string, number>;
+  hitQualityDistributionIn?: Record<string, number>;
+}
+
 export interface FleetAggregate {
   memberCount: number;
   dpsOut: number; dpsIn: number; logiOut: number; logiIn: number;
@@ -45,7 +56,7 @@ export interface FleetAggregate {
   hitQualityDistribution: Record<string, number>;
   hitQualityDistributionIn: Record<string, number>;
   breakdown: BreakdownEntry[];
-  memberSnapshots: Record<number, unknown>;
+  memberSnapshots: Record<number, MemberSnapshot>;
   fleetSessionId?: string;
 }
 
@@ -81,8 +92,12 @@ export function computeFleetAggregate(snapshots: PilotSnapshot[]): FleetAggregat
       agg.memberSnapshots[snap.characterId] = {
         dpsOut: snap.dpsOut, dpsIn: snap.dpsIn,
         logiOut: snap.logiOut, logiIn: snap.logiIn,
+        capTransfered: snap.capTransfered, capRecieved: snap.capRecieved,
+        capDamageOut: snap.capDamageOut, capDamageIn: snap.capDamageIn,
         mined: snap.mined,
         shipTypeId: snap.shipTypeId, solarSystemId: snap.solarSystemId,
+        hitQualityDistribution: snap.hitQualityDistribution ?? {},
+        hitQualityDistributionIn: snap.hitQualityDistributionIn ?? {},
       };
     }
   }
@@ -101,8 +116,10 @@ export function computeWarAggregate(fleetAggregates: FleetAggregate[]) {
     dpsOut: 0, dpsIn: 0, logiOut: 0, logiIn: 0,
     capTransfered: 0, capRecieved: 0, capDamageOut: 0, capDamageIn: 0, mined: 0,
     hitQualityDistribution: {} as Record<string, number>,
+    hitQualityDistributionIn: {} as Record<string, number>,
     breakdown: [] as BreakdownEntry[],
     fleetBreakdown: [] as unknown[],
+    memberSnapshots: {} as Record<number, MemberSnapshot>,
   };
 
   for (const fa of fleetAggregates) {
@@ -113,12 +130,16 @@ export function computeWarAggregate(fleetAggregates: FleetAggregate[]) {
     for (const [qual, count] of Object.entries(fa.hitQualityDistribution ?? {})) {
       war.hitQualityDistribution[qual] = (war.hitQualityDistribution[qual] ?? 0) + count;
     }
+    for (const [qual, count] of Object.entries(fa.hitQualityDistributionIn ?? {})) {
+      war.hitQualityDistributionIn[qual] = (war.hitQualityDistributionIn[qual] ?? 0) + count;
+    }
     war.breakdown.push(...(fa.breakdown ?? []));
     war.fleetBreakdown.push({
       fleetSessionId: fa.fleetSessionId,
       dpsOut:         fa.dpsOut,
       memberCount:    fa.memberCount,
     });
+    Object.assign(war.memberSnapshots, fa.memberSnapshots ?? {});
   }
 
   war.breakdown.sort((a, b) => b.amount - a.amount);

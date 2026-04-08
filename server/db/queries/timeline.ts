@@ -25,20 +25,31 @@ export async function upsert(row: TimelineRow) {
         avg_logi_out, avg_logi_in,
         avg_cap_transferred, avg_cap_received,
         avg_cap_damage_out, avg_cap_damage_in,
-        avg_mined, hit_quality_dist)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        avg_mined, hit_quality_dist, sample_count)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1)
      ON CONFLICT (fleet_session_id, character_id, bucket_at)
      DO UPDATE SET
-       avg_dps_out          = (pilot_timeline.avg_dps_out + EXCLUDED.avg_dps_out) / 2,
+       avg_dps_out          = (pilot_timeline.avg_dps_out * pilot_timeline.sample_count + EXCLUDED.avg_dps_out)
+                              / (pilot_timeline.sample_count + 1),
        max_dps_out          = GREATEST(pilot_timeline.max_dps_out, EXCLUDED.max_dps_out),
-       avg_dps_in           = (pilot_timeline.avg_dps_in + EXCLUDED.avg_dps_in) / 2,
-       avg_logi_out         = (pilot_timeline.avg_logi_out + EXCLUDED.avg_logi_out) / 2,
-       avg_logi_in          = (pilot_timeline.avg_logi_in + EXCLUDED.avg_logi_in) / 2,
-       avg_cap_transferred  = (pilot_timeline.avg_cap_transferred + EXCLUDED.avg_cap_transferred) / 2,
-       avg_cap_received     = (pilot_timeline.avg_cap_received + EXCLUDED.avg_cap_received) / 2,
-       avg_cap_damage_out   = (pilot_timeline.avg_cap_damage_out + EXCLUDED.avg_cap_damage_out) / 2,
-       avg_cap_damage_in    = (pilot_timeline.avg_cap_damage_in + EXCLUDED.avg_cap_damage_in) / 2,
-       avg_mined            = (pilot_timeline.avg_mined + EXCLUDED.avg_mined) / 2`,
+       avg_dps_in           = (pilot_timeline.avg_dps_in * pilot_timeline.sample_count + EXCLUDED.avg_dps_in)
+                              / (pilot_timeline.sample_count + 1),
+       avg_logi_out         = (pilot_timeline.avg_logi_out * pilot_timeline.sample_count + EXCLUDED.avg_logi_out)
+                              / (pilot_timeline.sample_count + 1),
+       avg_logi_in          = (pilot_timeline.avg_logi_in * pilot_timeline.sample_count + EXCLUDED.avg_logi_in)
+                              / (pilot_timeline.sample_count + 1),
+       avg_cap_transferred  = (pilot_timeline.avg_cap_transferred * pilot_timeline.sample_count + EXCLUDED.avg_cap_transferred)
+                              / (pilot_timeline.sample_count + 1),
+       avg_cap_received     = (pilot_timeline.avg_cap_received * pilot_timeline.sample_count + EXCLUDED.avg_cap_received)
+                              / (pilot_timeline.sample_count + 1),
+       avg_cap_damage_out   = (pilot_timeline.avg_cap_damage_out * pilot_timeline.sample_count + EXCLUDED.avg_cap_damage_out)
+                              / (pilot_timeline.sample_count + 1),
+       avg_cap_damage_in    = (pilot_timeline.avg_cap_damage_in * pilot_timeline.sample_count + EXCLUDED.avg_cap_damage_in)
+                              / (pilot_timeline.sample_count + 1),
+       avg_mined            = (pilot_timeline.avg_mined * pilot_timeline.sample_count + EXCLUDED.avg_mined)
+                              / (pilot_timeline.sample_count + 1),
+       hit_quality_dist     = COALESCE(EXCLUDED.hit_quality_dist, pilot_timeline.hit_quality_dist),
+       sample_count         = pilot_timeline.sample_count + 1`,
     [
       row.fleetSessionId, row.characterId, row.bucketAt,
       row.avgDpsOut, row.maxDpsOut, row.avgDpsIn,

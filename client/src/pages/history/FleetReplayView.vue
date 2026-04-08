@@ -129,16 +129,28 @@ const pilotPercentilePoints = computed((): PercentilePoint[] => {
   }));
 });
 
-const snapshotAtScrub = computed(() => {
-  if (!scrubTime.value || !timelineFull.value.length) return [];
-  // Find row closest to scrubTime
-  let closest = timelineFull.value[0];
-  let minDiff = Infinity;
-  for (const row of timelineFull.value) {
-    const diff = Math.abs(new Date(row.bucket_time).getTime() / 1000 - scrubTime.value);
-    if (diff < minDiff) { minDiff = diff; closest = row; }
-  }
-  return closest?.pilots ?? [];
+const snapshotAtScrub = ref<any[]>([]);
+
+// Debounced fetch: load fleet snapshot at scrub time from pilot_snapshots
+let scrubFetchTimer: ReturnType<typeof setTimeout> | null = null;
+watch(scrubTime, (ts) => {
+  if (scrubFetchTimer) clearTimeout(scrubFetchTimer);
+  if (!ts) { snapshotAtScrub.value = []; return; }
+  scrubFetchTimer = setTimeout(async () => {
+    const isoTime = new Date(ts * 1000).toISOString();
+    const rows: any[] = await api.get(`/api/history/fleet/${props.fleetId}/snapshot-at?t=${encodeURIComponent(isoTime)}`);
+    snapshotAtScrub.value = rows.map(r => ({
+      characterId:   r.character_id,
+      dpsOut:        r.dps_out ?? 0,
+      totalDps:      r.dps_out ?? 0,
+      dpsIn:         r.dps_in ?? 0,
+      logiOut:       r.logi_out ?? 0,
+      logiIn:        r.logi_in ?? 0,
+      shipTypeId:    r.ship_type_id,
+      solarSystemId: r.solar_system_id,
+      hitQualityDistribution: r.hit_quality_dist,
+    }));
+  }, 200);
 });
 
 function onScrub(ts: number) { scrubTime.value = ts; }

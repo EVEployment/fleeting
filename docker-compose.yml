@@ -18,6 +18,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    mem_limit: 1g
+    cpus: 2
 
   cache:
     image: memcached:1.6-alpine
@@ -25,6 +27,13 @@ services:
     command: memcached -m 256
     ports:
       - "11211:11211"
+    healthcheck:
+      test: ["CMD-SHELL", "echo stats | nc localhost 11211 | grep -q pid"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    mem_limit: 256m
+    cpus: 0.5
 
   app:
     build:
@@ -35,7 +44,7 @@ services:
       db:
         condition: service_healthy
       cache:
-        condition: service_started
+        condition: service_healthy
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       DATABASE_URL: postgres://${POSTGRES_USER:-peld}:${POSTGRES_PASSWORD:-peld}@db:5432/${POSTGRES_DB:-peld}
@@ -62,6 +71,14 @@ services:
       DB_POOL_MAX: ${DB_POOL_MAX:-20}
       DB_IDLE_TIMEOUT_MS: ${DB_IDLE_TIMEOUT_MS:-30000}
       DB_CONNECT_TIMEOUT_MS: ${DB_CONNECT_TIMEOUT_MS:-5000}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    mem_limit: 512m
+    cpus: 1
 
   nchan:
     build:
@@ -69,11 +86,14 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     ports:
       - "80:80"
     volumes:
       - ./client/dist:/usr/share/nginx/html:ro
+    mem_limit: 256m
+    cpus: 0.5
 
 volumes:
   pgdata:

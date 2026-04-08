@@ -30,6 +30,8 @@
     "quality": "命中质量",
     "system": "星系",
     "dps": "DPS",
+    "role": "角色",
+    "efficiency": "效率",
     "status": "状态",
     "fleetId": "舰队 ID",
     "fc": "FC",
@@ -161,6 +163,32 @@
     "copiedDetail": "已从 {{from}} 复制到 {{to}}。",
     "clearedSummary": "总览已清除",
     "clearedDetail": "{{name}}：总览设置已移除。"
+  },
+
+  "focus": {
+    "title": "火力聚焦",
+    "coverage": "覆盖率",
+    "focusShare": "聚焦度",
+    "effTargets": "有效目标数",
+    "lowCoverage": "低覆盖",
+    "others": "(其他)"
+  },
+
+  "alert": {
+    "lowActive": "活跃率低",
+    "dpsDrop": "舰队DPS骤降",
+    "poorFocus": "火力分散"
+  },
+
+  "activeDps": {
+    "label": "活跃DPS"
+  },
+
+  "hqDiag": {
+    "title": "命中质量",
+    "noTurretData": "无炮台/无人机数据",
+    "trackingIssue": "可能存在追踪问题 — Grazes/Glances/Misses 占比高",
+    "missileOnly": "仅导弹或智能炸弹 — 无炮台命中质量差异"
   },
 
   "history": {

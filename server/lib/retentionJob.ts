@@ -84,6 +84,18 @@ export async function runRetention() {
     }
   }
 
+  // ── Prune stale rows from the default partition ──────────────────────────
+  if (global.raw_events_ttl_days != null) {
+    const defaultCutoff = new Date(Date.now() - global.raw_events_ttl_days * MS_PER_DAY);
+    const { rowCount } = await query(
+      `DELETE FROM combat_events_default WHERE occurred_at < $1`,
+      [defaultCutoff],
+    );
+    if (rowCount && rowCount > 0) {
+      console.info(`[retention] Deleted ${rowCount} stale rows from combat_events_default`);
+    }
+  }
+
   console.info('[retention] Done.');
 }
 

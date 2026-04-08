@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import './types/session.js';
 
 import Fastify from 'fastify';
 import fastifySession from '@fastify/session';
@@ -89,6 +90,22 @@ async function start() {
 
   await app.listen({ port: Number(process.env.PORT) || 3000, host: '0.0.0.0' });
 }
+
+async function shutdown(signal: string) {
+  console.info(`[server] ${signal} received — shutting down gracefully`);
+  try {
+    await app.close();
+    await pool.end();
+    console.info('[server] Shutdown complete');
+    process.exit(0);
+  } catch (err) {
+    console.error('[server] Error during shutdown:', err);
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT',  () => shutdown('SIGINT'));
 
 start().catch((err) => {
   console.error(err);

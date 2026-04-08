@@ -12,7 +12,7 @@
 import { computed } from 'vue';
 import type { Ref } from 'vue';
 import { shipTypes } from '../lib/shipTypes';
-import { NON_COMBAT_GROUP_IDS } from '../lib/nonCombatGroups';
+import { classifyShipRole, isNonCombat } from '../lib/shipRoles';
 
 export interface PresenceRecord {
   characterId:   number;
@@ -72,7 +72,7 @@ export function useParticipation(
     for (const m of latest) {
       const shipInfo  = shipTypes.get(m.shipTypeId);
       const isNonCombatShip = shipInfo
-        ? NON_COMBAT_GROUP_IDS.has(shipInfo.groupId)
+        ? isNonCombat(classifyShipRole(shipInfo.groupId))
         : false;
 
       // Location outlier: different system in both latest and previous readings

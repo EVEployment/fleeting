@@ -30,6 +30,8 @@
     "quality": "Quality",
     "system": "System",
     "dps": "DPS",
+    "role": "Role",
+    "efficiency": "Eff.",
     "status": "Status",
     "fleetId": "Fleet ID",
     "fc": "FC",
@@ -161,6 +163,32 @@
     "copiedDetail": "Copied from {{from}} -> {{to}}.",
     "clearedSummary": "Overview cleared",
     "clearedDetail": "{{name}}: overview settings removed."
+  },
+
+  "focus": {
+    "title": "Fire Focus",
+    "coverage": "Coverage",
+    "focusShare": "Focus Share",
+    "effTargets": "Eff. Targets",
+    "lowCoverage": "low coverage",
+    "others": "(others)"
+  },
+
+  "alert": {
+    "lowActive": "Low Active Ratio",
+    "dpsDrop": "Fleet DPS Drop",
+    "poorFocus": "Poor Focus"
+  },
+
+  "activeDps": {
+    "label": "ACTIVE DPS"
+  },
+
+  "hqDiag": {
+    "title": "Hit Quality",
+    "noTurretData": "No turret/drone data",
+    "trackingIssue": "Possible tracking issue — high Grazes/Glances/Misses",
+    "missileOnly": "Missile-only or smartbomb — no turret quality variance"
   },
 
   "history": {

@@ -48,12 +48,6 @@ async function getDiscovery(): Promise<OidcDiscovery> {
 
 // ── Session-stored OIDC token helpers ─────────────────────────────────────────
 
-interface OidcTokenSession {
-  oidcAccessToken?: string;
-  oidcRefreshToken?: string;
-  oidcAccessExpiry?: number; // unix ms
-}
-
 /**
  * Ensure the in-house OIDC access_token in the session is still valid.
  * If it's within 60 s of expiry, refresh it using the stored refresh_token,
@@ -61,14 +55,13 @@ interface OidcTokenSession {
  * sync `eve_characters` in the DB.
  */
 async function ensureOidcToken(session: FastifyRequest['session']): Promise<string> {
-  const s = session as unknown as OidcTokenSession & { userId: string; characters: unknown[] };
   const now = Date.now();
 
-  if (s.oidcAccessToken && (!s.oidcAccessExpiry || s.oidcAccessExpiry - now > 60_000)) {
-    return s.oidcAccessToken;
+  if (session.oidcAccessToken && (!session.oidcAccessExpiry || session.oidcAccessExpiry - now > 60_000)) {
+    return session.oidcAccessToken;
   }
 
-  if (!s.oidcRefreshToken) {
+  if (!session.oidcRefreshToken) {
     throw new Error('No OIDC refresh_token in session — user must re-authenticate');
   }
 
@@ -79,7 +72,7 @@ async function ensureOidcToken(session: FastifyRequest['session']): Promise<stri
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type:    'refresh_token',
-      refresh_token: s.oidcRefreshToken as string,
+      refresh_token: session.oidcRefreshToken,
       client_id:     CLIENT_ID,
       client_secret: CLIENT_SECRET,
     }),
@@ -102,14 +95,14 @@ async function ensureOidcToken(session: FastifyRequest['session']): Promise<stri
   const claims = await verifyJwt(jwtToVerify, jwksUrl, { issuer: OIDC_ISSUER }) as Record<string, unknown>;
 
   // Update session
-  s.oidcAccessToken  = tokens.access_token;
-  s.oidcAccessExpiry = Date.now() + tokens.expires_in * 1000;
-  if (tokens.refresh_token) s.oidcRefreshToken = tokens.refresh_token;
+  session.oidcAccessToken  = tokens.access_token;
+  session.oidcAccessExpiry = Date.now() + tokens.expires_in * 1000;
+  if (tokens.refresh_token) session.oidcRefreshToken = tokens.refresh_token;
 
   // Sync eve_characters from the updated `acct` claim
-  if (Array.isArray(claims.acct) && s.userId) {
-    await syncCharactersFromAcct(s.userId as string, claims.acct as AccountInfo[]);
-    s.characters = (claims.acct as AccountInfo[])
+  if (Array.isArray(claims.acct) && session.userId) {
+    await syncCharactersFromAcct(session.userId, claims.acct as AccountInfo[]);
+    session.characters = (claims.acct as AccountInfo[])
       .filter((c) => c.valid)
       .map((c) => ({ id: c.id, name: c.name }));
   }
@@ -150,9 +143,8 @@ export async function oidcLogin(req: FastifyRequest, reply: FastifyReply): Promi
     .update(codeVerifier)
     .digest('base64url');
 
-  const s = req.session as unknown as Record<string, unknown>;
-  s.oidcState        = state;
-  s.oidcCodeVerifier = codeVerifier;
+  req.session.oidcState        = state;
+  req.session.oidcCodeVerifier = codeVerifier;
 
   const discovery = await getDiscovery();
 
@@ -175,15 +167,14 @@ export async function oidcLogin(req: FastifyRequest, reply: FastifyReply): Promi
 
 export async function oidcCallback(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   const { code, state } = req.query as Record<string, string>;
-  const s = req.session as unknown as Record<string, unknown>;
 
-  if (!code || state !== s.oidcState) {
+  if (!code || state !== req.session.oidcState) {
     return reply.code(400).send({ error: 'Invalid state' }) as unknown as void;
   }
 
-  const codeVerifier = s.oidcCodeVerifier as string;
-  delete s.oidcState;
-  delete s.oidcCodeVerifier;
+  const codeVerifier = req.session.oidcCodeVerifier ?? '';
+  delete req.session.oidcState;
+  delete req.session.oidcCodeVerifier;
 
   const discovery = await getDiscovery();
 
@@ -247,15 +238,14 @@ export async function oidcCallback(req: FastifyRequest, reply: FastifyReply): Pr
   // Regenerate session ID to prevent session-fixation attacks.
   // @fastify/session v10 preserves the session store entry but issues a new cookie.
   await req.session.regenerate();
-  const sNew = req.session as unknown as Record<string, unknown>;
 
   // Store OIDC tokens in the fresh session
-  sNew.userId           = userId;
-  sNew.roles            = roles;
-  sNew.characters       = acct.filter((c) => c.valid).map((c) => ({ id: c.id, name: c.name }));
-  sNew.oidcAccessToken  = tokens.access_token;
-  sNew.oidcAccessExpiry = Date.now() + tokens.expires_in * 1000;
-  if (tokens.refresh_token) sNew.oidcRefreshToken = tokens.refresh_token;
+  req.session.userId           = userId;
+  req.session.roles            = roles;
+  req.session.characters       = acct.filter((c) => c.valid).map((c) => ({ id: c.id, name: c.name }));
+  req.session.oidcAccessToken  = tokens.access_token;
+  req.session.oidcAccessExpiry = Date.now() + tokens.expires_in * 1000;
+  if (tokens.refresh_token) req.session.oidcRefreshToken = tokens.refresh_token;
 
   return reply.redirect('/pilot') as unknown as void;
 }
@@ -288,20 +278,18 @@ function mapGroupsToRoles(groups: string[]): string[] {
 // ── Middleware ─────────────────────────────────────────────────────────────────
 
 export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Promise<void> {
-  const s = req.session as unknown as Record<string, unknown>;
-  if (!s.userId) {
+  if (!req.session.userId) {
     reply.code(401).send({ error: 'Unauthorized' });
   }
 }
 
 export function requireRole(role: string) {
   return async function (req: FastifyRequest, reply: FastifyReply): Promise<void> {
-    const s = req.session as unknown as { userId?: string; roles?: string[] };
-    if (!s.userId) {
+    if (!req.session.userId) {
       reply.code(401).send({ error: 'Unauthorized' });
       return;
     }
-    if (!s.roles?.includes(role)) {
+    if (!req.session.roles?.includes(role)) {
       reply.code(403).send({ error: 'Forbidden' });
     }
   };

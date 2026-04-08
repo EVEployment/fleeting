@@ -237,10 +237,10 @@ export const weaponTypesByName: ReadonlyMap<string, WeaponType> = new Map(
       for (const [id, { names }] of shipTypeMap) {
         const name = names[lang] ?? names.en;
         if (name) typeEntries[String(id)] = name;
-            for (const [id, { names }] of weaponTypeMap) {
-              const name = names[lang] ?? names.en;
-              if (name) typeEntries[String(id)] = name;
-            }
+      }
+      for (const [id, { names }] of weaponTypeMap) {
+        const name = names[lang] ?? names.en;
+        if (name) typeEntries[String(id)] = name;
       }
       const groupEntries = {};
       for (const [gid, names] of groupLangNames) {

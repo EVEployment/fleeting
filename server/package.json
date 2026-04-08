@@ -7,7 +7,9 @@
   "scripts": {
     "start": "tsx index.ts",
     "dev": "tsx --watch index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@fastify/cookie": "^9.4.0",
@@ -30,6 +32,7 @@
     "@types/node": "^22.0.0",
     "@types/pg": "^8.11.10",
     "tsx": "^4.19.2",
-    "typescript": "^5.8.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.3"
   }
 }

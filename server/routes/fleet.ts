@@ -18,8 +18,8 @@ export default async function fleetRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'name and fcCharacterId are required' });
     }
 
-    const s = req.session as unknown as Record<string, unknown>;
-    const owned = await characterBelongsToUser(s['userId'] as string, fcCharacterId as number);
+    if (!req.session.userId) return reply.code(401).send({ error: 'Unauthorized' });
+    const owned = await characterBelongsToUser(req.session.userId, fcCharacterId as number);
     if (!owned) return reply.code(403).send({ error: 'Character not owned by you' });
 
     let eveFleetId: bigint | null = null;
@@ -40,10 +40,16 @@ export default async function fleetRoutes(fastify: FastifyInstance) {
       fcCharacterId: fcCharacterId as number,
     });
 
-    fleets.createPartitionForFleet(fleet.id).catch(console.error);
+    try {
+      await fleets.createPartitionForFleet(fleet.id);
+    } catch (err) {
+      console.error('[fleet] Partition creation failed, rolling back fleet:', (err as Error).message);
+      await fleets.deleteFleet(fleet.id);
+      return reply.code(500).send({ error: 'Failed to initialize fleet storage' });
+    }
 
     if (eveFleetId) {
-      const oidcAccessToken = (s['oidcAccessToken'] as string | undefined) ?? '';
+      const oidcAccessToken = req.session.oidcAccessToken ?? '';
       startTracking(fleet.id, fcCharacterId as number, BigInt(eveFleetId), oidcAccessToken);
     }
 
@@ -56,8 +62,8 @@ export default async function fleetRoutes(fastify: FastifyInstance) {
     const { characterId } = q;
     if (!characterId) return reply.code(400).send({ error: 'characterId is required' });
 
-    const s = req.session as unknown as Record<string, unknown>;
-    const owned = await characterBelongsToUser(s['userId'] as string, Number(characterId));
+    if (!req.session.userId) return reply.code(401).send({ error: 'Unauthorized' });
+    const owned = await characterBelongsToUser(req.session.userId, Number(characterId));
     if (!owned) return reply.code(403).send({ error: 'Character not owned by you' });
 
     try {
@@ -79,8 +85,8 @@ export default async function fleetRoutes(fastify: FastifyInstance) {
     const q = req.query as Record<string, string>;
     const { characterId } = q;
     if (!characterId) return reply.code(400).send({ error: 'characterId is required' });
-    const s = req.session as unknown as Record<string, unknown>;
-    const owned = await characterBelongsToUser(s['userId'] as string, Number(characterId));
+    if (!req.session.userId) return reply.code(401).send({ error: 'Unauthorized' });
+    const owned = await characterBelongsToUser(req.session.userId, Number(characterId));
     if (!owned) return reply.code(403).send({ error: 'Character not owned by you' });
     return reply.send(await fleets.getFleetsByFc(Number(characterId)));
   });
@@ -90,8 +96,8 @@ export default async function fleetRoutes(fastify: FastifyInstance) {
     const body = req.body as Record<string, unknown> | null;
     const { characterId } = body ?? {};
     if (!characterId) return reply.code(400).send({ error: 'characterId is required' });
-    const s = req.session as unknown as Record<string, unknown>;
-    const owned = await characterBelongsToUser(s['userId'] as string, characterId as number);
+    if (!req.session.userId) return reply.code(401).send({ error: 'Unauthorized' });
+    const owned = await characterBelongsToUser(req.session.userId, characterId as number);
     if (!owned) return reply.code(403).send({ error: 'Character not owned by you' });
     const params = req.params as { id: string };
     const fleet = await fleets.getFleetById(params.id);
@@ -120,8 +126,8 @@ export default async function fleetRoutes(fastify: FastifyInstance) {
     const fleet = await fleets.getFleetById(params.id);
     if (!fleet) return reply.code(404).send({ error: 'Fleet not found' });
 
-    const s = req.session as unknown as Record<string, unknown>;
-    const owned = await characterBelongsToUser(s['userId'] as string, fleet.fc_character_id);
+    if (!req.session.userId) return reply.code(401).send({ error: 'Unauthorized' });
+    const owned = await characterBelongsToUser(req.session.userId, fleet.fc_character_id);
     if (!owned) return reply.code(403).send({ error: 'Not your fleet' });
 
     await fleets.closeFleet(params.id);
