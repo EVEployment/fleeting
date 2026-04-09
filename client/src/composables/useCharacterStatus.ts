@@ -97,12 +97,16 @@ async function pollOnlineCharacter(charId: number): Promise<void> {
 
 async function pollAll(): Promise<void> {
   if (!_me) return;
-  const isFc = _me.roles.some((r) => r === 'fc' || r === 'war_commander');
+  const isFc = isFleetCommanderUser(_me);
   await Promise.all(
     _me.characters.map((c) =>
       isFc ? pollFcCharacter(_me!, c.id) : pollOnlineCharacter(c.id),
     ),
   );
+}
+
+function isFleetCommanderUser(me: MeResponse): boolean {
+  return me.roles.some((r) => r === 'fc' || r === 'war_commander');
 }
 
 export function useCharacterStatus() {
@@ -139,7 +143,7 @@ export function useCharacterStatus() {
   function refresh(charIds?: number[]): void {
     if (!_me) return;
     const ids = charIds ?? _me.characters.map((c) => c.id);
-    const isFc = _me.roles.some((r) => r === 'fc' || r === 'war_commander');
+    const isFc = isFleetCommanderUser(_me);
     for (const id of ids) {
       if (isFc) {
         pollFcCharacter(_me, id).catch(console.error);

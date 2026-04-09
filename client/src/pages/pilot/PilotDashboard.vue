@@ -422,6 +422,13 @@ async function restorePilotSessionCache() {
   return true;
 }
 
+// Online status and fleet session derived from the app-level character status poller.
+const isOnline = computed<boolean>(() => charStatus[selectedCharIdNum.value ?? 0]?.online === true);
+const fleetInfo = computed<{ fleetId: string } | null>(() => {
+  const session = charStatus[selectedCharIdNum.value ?? 0]?.session;
+  return session ? { fleetId: session.id } : null;
+});
+
 onEntries(entries => {
   debugChar('onEntries:batch', {
     count: entries.length,
@@ -525,13 +532,6 @@ onEntries(entries => {
   void persistPilotSessionCache();
 
   if (isOnline.value && fleetInfo.value && selectedCharIdNum.value) uploadSnapshot();
-});
-
-// Online status and fleet session derived from the app-level character status poller.
-const isOnline = computed<boolean>(() => charStatus[selectedCharIdNum.value ?? 0]?.online === true);
-const fleetInfo = computed<{ fleetId: string } | null>(() => {
-  const session = charStatus[selectedCharIdNum.value ?? 0]?.session;
-  return session ? { fleetId: session.id } : null;
 });
 
 // Upload snapshot to server every 2s via pilot route
