@@ -121,6 +121,12 @@
     "discovering": "discovering…"
   },
 
+  "character": {
+    "online": "Online",
+    "offline": "Offline",
+    "checking": "Checking…"
+  },
+
   "pilot": {
     "selectCharacter": "Select character",
     "openLogs":  "Open Logs",

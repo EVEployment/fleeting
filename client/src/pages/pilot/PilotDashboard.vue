@@ -10,7 +10,27 @@
         :placeholder="t('pilot.selectCharacter')"
         class="char-select"
         @update:modelValue="onCharacterModelUpdate"
-      />
+      >
+        <template #option="{ option }">
+          <div class="char-option">
+            <span class="char-option-name">{{ option.label }}</span>
+            <span
+              class="char-option-status"
+              :class="{
+                'status-online':  option.online === true,
+                'status-offline': option.online === false,
+                'status-unknown': option.online === null,
+              }"
+            >
+              {{
+                option.online === true  ? t('character.online')  :
+                option.online === false ? t('character.offline') :
+                t('character.checking')
+              }}
+            </span>
+          </div>
+        </template>
+      </Select>
       <Button
         v-if="!logRunning"
         :label="t('pilot.openLogs')"
@@ -129,6 +149,7 @@ import { IDB_KEYS, deleteIdbValue, loadIdbValue, saveIdbValue, type PilotSession
 import { useLogReader } from '@/composables/useLogReader';
 import { useOverviewSettings } from '@/composables/useOverviewSettings';
 import { useDpsEngine, type BreakdownEntry, type DpsSnapshot } from '@/composables/useDpsEngine';
+import { useCharacterStatus } from '@/composables/useCharacterStatus';
 import type { LogEntry } from '@/lib/logRegex';
 import { emptyDistribution } from '@/lib/hitQuality';
 import AppNav from '@/components/AppNav.vue';
@@ -149,9 +170,9 @@ const selectedMetric = ref<ChartMetricKey>('dpsOut');
 const chartTickSec = ref(1);
 const aggregateHistoryMin = ref(5);
 const characterHistoryMin = ref(5);
-const fleetInfo = ref<{ fleetId: string } | null>(null);
-const isOnline  = ref(false);
 const PILOT_SESSION_MAX_AGE_MS = 10 * 60 * 1000;
+
+const { charStatus, start: startCharacterStatus } = useCharacterStatus();
 
 const DEBUG_CHAR = true;
 
@@ -181,7 +202,11 @@ function normalizeName(name: string): string {
 }
 
 const characterOptions = computed(() =>
-  (me.value?.characters ?? []).map(c => ({ label: c.name, value: c.id })),
+  (me.value?.characters ?? []).map(c => ({
+    label:  c.name,
+    value:  c.id,
+    online: charStatus[c.id]?.online ?? null,
+  })),
 );
 
 const metricOptions = computed(() => [
@@ -502,22 +527,19 @@ onEntries(entries => {
   if (isOnline.value && fleetInfo.value && selectedCharIdNum.value) uploadSnapshot();
 });
 
-// Online status polling — check every 60 s; gates all fleet endpoint calls
-const appEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
-const ONLINE_POLL_MS      = parseInt(appEnv.PUBLIC_ONLINE_POLL_MS      ?? '60000', 10);
-const UPLOAD_INTERVAL_MS  = parseInt(appEnv.PUBLIC_UPLOAD_INTERVAL_MS  ?? '2000',  10);
-const FLEET_POLL_MS       = parseInt(appEnv.PUBLIC_FLEET_POLL_MS       ?? '30000', 10);
-let onlinePollTimer: ReturnType<typeof setInterval> | null = null;
+// Online status and fleet session derived from the app-level character status poller.
+const isOnline = computed<boolean>(() => charStatus[selectedCharIdNum.value ?? 0]?.online === true);
+const fleetInfo = computed<{ fleetId: string } | null>(() => {
+  const session = charStatus[selectedCharIdNum.value ?? 0]?.session;
+  return session ? { fleetId: session.id } : null;
+});
 
-async function checkOnlineStatus() {
-  if (!selectedCharIdNum.value) return;
-  try {
-    const data = await api.get<{ online: boolean }>(`/api/character/${selectedCharIdNum.value}/online`);
-    isOnline.value = data.online;
-  } catch {
-    isOnline.value = false;
-  }
-}
+// Upload snapshot to server every 2s via pilot route
+const UPLOAD_INTERVAL_MS = parseInt(
+  (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.PUBLIC_UPLOAD_INTERVAL_MS ?? '2000',
+  10,
+);
+let uploadTimer: ReturnType<typeof setInterval> | null = null;
 
 async function openLogs() {
   try {
@@ -534,22 +556,6 @@ async function stopAndForget() {
   await clearPilotSessionCache();
   liveLogRef.value?.clear();
 }
-
-// Fleet polling
-let fleetPollTimer: ReturnType<typeof setInterval> | null = null;
-
-async function discoverFleet() {
-  if (!selectedCharIdNum.value || !isOnline.value) return;
-  try {
-    const data = await api.get<{ fleet_id?: string } | null>(`/api/fleet/discover?characterId=${selectedCharIdNum.value}`);
-    fleetInfo.value = data?.fleet_id ? { fleetId: data.fleet_id } : null;
-  } catch {
-    fleetInfo.value = null;
-  }
-}
-
-// Upload snapshot to server every 2s via pilot route
-let uploadTimer: ReturnType<typeof setInterval> | null = null;
 
 async function uploadSnapshot() {
   if (!snap.value || !fleetInfo.value || !selectedCharIdNum.value || !isOnline.value) return;
@@ -568,18 +574,9 @@ watch(selectedCharIdNum, async (charId) => {
   if (!charId) return;
   debugChar('watch:selectedCharIdNum:timersReset', { charId });
   // Engines are persistent — do not clear historical view on switch.
-  isOnline.value = false;
-  fleetInfo.value = null;
-  // Clear old timers
-  if (onlinePollTimer) clearInterval(onlinePollTimer);
+  // Clear upload timer; it will be restarted below.
   if (uploadTimer) clearInterval(uploadTimer);
-  if (fleetPollTimer) clearInterval(fleetPollTimer);
-  // Check online first, then start fleet discovery
-  await checkOnlineStatus();
-  await discoverFleet();
-  onlinePollTimer = setInterval(checkOnlineStatus, ONLINE_POLL_MS);
-  uploadTimer     = setInterval(uploadSnapshot, UPLOAD_INTERVAL_MS);
-  fleetPollTimer  = setInterval(discoverFleet, FLEET_POLL_MS);
+  uploadTimer = setInterval(uploadSnapshot, UPLOAD_INTERVAL_MS);
 });
 
 function logout() {
@@ -596,6 +593,8 @@ onMounted(async () => {
       characterCount: me.value.characters.length,
       characters: me.value.characters,
     });
+    // Start app-level character status polling (deduplicates if App.vue already started it).
+    startCharacterStatus(me.value);
     // Pre-create engines for ALL characters so all begin tracking immediately
     for (const char of me.value.characters) {
       getOrCreateEngine(char.id);
@@ -620,9 +619,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   void persistPilotSessionCache();
-  if (onlinePollTimer) clearInterval(onlinePollTimer);
   if (uploadTimer) clearInterval(uploadTimer);
-  if (fleetPollTimer) clearInterval(fleetPollTimer);
   stopLogs();
 });
 </script>
@@ -695,6 +692,23 @@ main { padding: 1rem 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
   color: #a8c050;
   font-size: 0.9rem;
 }
+
+/* Character dropdown option with online status */
+.char-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.char-option-name {
+  font-size: 0.88rem;
+  color: #cfd9ee;
+}
+.char-option-status {
+  font-size: 0.72rem;
+}
+.status-online  { color: #4ade80; }
+.status-offline { color: #f87171; }
+.status-unknown { color: #5b6f8e; font-style: italic; }
 
 @media (max-width: 1200px) {
   main { padding: 1rem; }

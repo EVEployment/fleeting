@@ -46,6 +46,14 @@ export async function deleteFleet(id: string) {
   await query('DELETE FROM fleet_sessions WHERE id = $1', [id]);
 }
 
+export async function getOpenFleetByEveFleetId(eveFleetId: bigint) {
+  const { rows } = await query(
+    'SELECT id, name FROM fleet_sessions WHERE eve_fleet_id = $1 AND is_open = TRUE LIMIT 1',
+    [eveFleetId],
+  );
+  return rows[0] as { id: string; name: string } | undefined ?? null;
+}
+
 export async function getAllFleets({ page = 1, limit = 20 } = {}) {
   const offset = (page - 1) * limit;
   const { rows } = await query(

@@ -2,13 +2,14 @@ import type { FastifyInstance } from 'fastify';
 import { requireAuth } from '../lib/auth.js';
 import { characterBelongsToUser } from '../db/queries/users.js';
 import { upsertFleetMember, getLatestPresence } from '../db/queries/members.js';
+import { getOpenFleetByEveFleetId } from '../db/queries/fleets.js';
 import * as mem from '../store/memcached.js';
 import * as snapshotStore from '../store/snapshotStore.js';
 import type { PilotSnapshot } from '../lib/aggregate.js';
 import { publish } from '../lib/nchanPublisher.js';
 import { write } from '../lib/historyWriter.js';
 import { exchangeEveToken } from '../lib/auth.js';
-import { getCharacterOnlineStatus } from '../lib/esi.js';
+import { getCharacterOnlineStatus, getFleetForCharacter } from '../lib/esi.js';
 
 /** Numeric fields expected in the snapshot that must be finite numbers. */
 const NUMERIC_SNAPSHOT_FIELDS = [
@@ -58,6 +59,46 @@ export default async function pilotRoutes(fastify: FastifyInstance) {
     } catch {
       // If ESI fails we conservatively report offline so fleet ops are skipped.
       return reply.send({ online: false });
+    }
+  });
+
+  // GET /api/character/:id/fleet — check online status then fleet boss status via ESI,
+  // and look up any matching open fleet session in the DB.
+  // Returns: { online, role, eveFleetId, session: { id, name } | null }
+  fastify.get('/api/character/:id/fleet', { preHandler: requireAuth }, async (req, reply) => {
+    const params = req.params as { id: string };
+    const characterId = Number(params.id);
+    if (!Number.isInteger(characterId) || characterId <= 0) {
+      return reply.code(400).send({ error: 'Invalid characterId' });
+    }
+    if (!req.session.userId) return reply.code(401).send({ error: 'Unauthorized' });
+    const owned = await characterBelongsToUser(req.session.userId, characterId);
+    if (!owned) return reply.code(403).send({ error: 'Character does not belong to your account' });
+
+    try {
+      const token  = await exchangeEveToken(characterId, req.session);
+      const status = await getCharacterOnlineStatus(token, characterId);
+
+      if (!status.online) {
+        return reply.send({ online: false, role: null, eveFleetId: null, session: null });
+      }
+
+      // Online — check ESI fleet membership
+      try {
+        const fleetInfo = await getFleetForCharacter(token, characterId);
+        const session   = await getOpenFleetByEveFleetId(BigInt(fleetInfo.fleet_id));
+        return reply.send({
+          online:      true,
+          role:        fleetInfo.role,
+          eveFleetId:  String(fleetInfo.fleet_id),
+          session,
+        });
+      } catch {
+        // Not in a fleet or ESI fleet check failed
+        return reply.send({ online: true, role: null, eveFleetId: null, session: null });
+      }
+    } catch {
+      return reply.send({ online: false, role: null, eveFleetId: null, session: null });
     }
   });
 

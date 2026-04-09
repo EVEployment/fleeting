@@ -13,7 +13,7 @@ export default async function fleetRoutes(fastify: FastifyInstance) {
   // POST /api/fleet — FC creates a new fleet session
   fastify.post('/api/fleet', { preHandler: requireRole(ROLES.FC) }, async (req, reply) => {
     const body = req.body as Record<string, unknown> | null;
-    const { name, fcCharacterId, linkEveFleet = false } = body ?? {};
+    const { name, fcCharacterId, linkEveFleet = false, eveFleetId: passedEveFleetId } = body ?? {};
     if (!name || !fcCharacterId) {
       return reply.code(400).send({ error: 'name and fcCharacterId are required' });
     }
@@ -23,7 +23,15 @@ export default async function fleetRoutes(fastify: FastifyInstance) {
     if (!owned) return reply.code(403).send({ error: 'Character not owned by you' });
 
     let eveFleetId: bigint | null = null;
-    if (linkEveFleet) {
+    if (passedEveFleetId) {
+      // Direct eveFleetId supplied by caller (e.g. from an earlier ESI check) — use it directly
+      // to avoid a redundant ESI round-trip.
+      try {
+        eveFleetId = BigInt(passedEveFleetId as string);
+      } catch {
+        return reply.code(400).send({ error: 'Invalid eveFleetId' });
+      }
+    } else if (linkEveFleet) {
       try {
         const token = await exchangeEveToken(fcCharacterId as number, req.session);
         const info  = await getFleetForCharacter(token, fcCharacterId as number);
