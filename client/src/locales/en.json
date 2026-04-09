@@ -39,7 +39,8 @@
     "started": "Started",
     "ended": "Ended",
     "duration": "Duration",
-    "nonCombatPct": "Non-Combat %"
+    "nonCombatPct": "Non-Combat %",
+    "composition": "Composition"
   },
 
   "breakdown": {

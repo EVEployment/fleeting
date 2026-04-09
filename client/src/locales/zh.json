@@ -39,7 +39,8 @@
     "started": "开始时间",
     "ended": "结束时间",
     "duration": "持续时间",
-    "nonCombatPct": "非战斗占比 %"
+    "nonCombatPct": "非战斗占比 %",
+    "composition": "舰队编成"
   },
 
   "breakdown": {

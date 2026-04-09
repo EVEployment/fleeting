@@ -38,6 +38,8 @@
           />
         </div>
         <PercentileChart :points="pilotPercentilePoints" />
+        <DpsComparisonChart v-if="pilotDpsPoints.length || peerMedianData.length"
+          :pilot-dps="pilotDpsPoints" :peer-median="peerMedianData" />
       </TabPanel>
 
       <!-- Participation tab -->
@@ -87,7 +89,8 @@ import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import { api } from '@/api/client';
 import CombatTimeline from '@/components/CombatTimeline.vue';
-import PercentileChart, { type PercentilePoint } from '@/components/PercentileChart.vue';
+import PercentileChart, { type PercentilePoint, type PeerMedianPoint } from '@/components/PercentileChart.vue';
+import DpsComparisonChart, { type DpsPoint } from '@/components/DpsComparisonChart.vue';
 import PresenceTimeline from '@/components/PresenceTimeline.vue';
 import MemberTable from '@/components/MemberTable.vue';
 import BreakdownTable from '@/components/BreakdownTable.vue';
@@ -109,6 +112,7 @@ const participation = ref<any[]>([]);
 const eventData    = ref<{ total: number; rows: any[] }>({ total: 0, rows: [] });
 const selectedCharId = ref<number | null>(null);
 const pilotSnapshots = ref<Record<number, any[]>>({});
+const peerMedianData = ref<PeerMedianPoint[]>([]);
 const scrubTime    = ref<number | null>(null);
 
 const eventFilters = ref({ target: '', weapon: '', charId: '' });
@@ -124,8 +128,18 @@ const pilotOptions = computed(() =>
 const pilotPercentilePoints = computed((): PercentilePoint[] => {
   if (!selectedCharId.value) return [];
   return (pilotSnapshots.value[selectedCharId.value] ?? []).map(r => ({
-    ts:  new Date(r.bucket_ts).getTime() / 1000,
-    p50: r.p50, p90: r.p90, p95: r.p95, p99: r.p99, avg: r.avg_dps,
+    ts:  new Date(r.recorded_at).getTime() / 1000,
+    p50: r.dmg_out_p50 ?? 0, p90: r.dmg_out_p90 ?? 0,
+    p95: r.dmg_out_p95 ?? 0, p99: r.dmg_out_p99 ?? 0,
+    avg: r.dmg_out_avg ?? 0,
+  }));
+});
+
+const pilotDpsPoints = computed((): DpsPoint[] => {
+  if (!selectedCharId.value) return [];
+  return (pilotSnapshots.value[selectedCharId.value] ?? []).map(r => ({
+    ts:  new Date(r.recorded_at).getTime() / 1000,
+    dps: r.dps_out ?? 0,
   }));
 });
 
@@ -164,9 +178,25 @@ async function loadEvents(page = 1) {
 }
 
 watch(selectedCharId, async (charId) => {
-  if (!charId || pilotSnapshots.value[charId]) return;
-  const rows = await api.get(`/api/history/fleet/${props.fleetId}/snapshots/${charId}`);
-  pilotSnapshots.value[charId] = rows;
+  peerMedianData.value = [];
+  if (!charId) return;
+  if (!pilotSnapshots.value[charId]) {
+    pilotSnapshots.value[charId] = await api.get(`/api/history/fleet/${props.fleetId}/snapshots/${charId}`);
+  }
+  // Stale request guard: abort if pilot changed during await
+  if (selectedCharId.value !== charId) return;
+  try {
+    const peerRows: any[] = await api.get(`/api/history/fleet/${props.fleetId}/peer-median/${charId}`);
+    if (selectedCharId.value !== charId) return; // guard after second await
+    peerMedianData.value = peerRows
+      .filter(r => r.median_dps != null && r.peer_count > 0)
+      .map(r => ({
+        ts: new Date(r.recorded_at).getTime() / 1000,
+        median: Number(r.median_dps),
+      }));
+  } catch {
+    if (selectedCharId.value === charId) peerMedianData.value = [];
+  }
 });
 
 function fmtDate(iso: string) { return new Date(iso).toLocaleString(); }

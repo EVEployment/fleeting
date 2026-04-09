@@ -177,6 +177,127 @@ const apiServer = http.createServer((req, res) => {
     return;
   }
 
+  // ── History mock endpoints ──────────────────────────────────────────────
+
+  if (url.pathname === '/api/history/fleets') {
+    const mockFleets = [{
+      id: FLEET_ID, name: 'Mock Fleet', created_at: new Date(Date.now() - 3600000).toISOString(),
+      closed_at: new Date().toISOString(), is_open: false, member_count: pilots.length,
+      avg_dps_out: 550.00,
+      ship_type_ids: pilots.map(p => p.shipTypeId),
+    }];
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ fleets: mockFleets, total: 1 }));
+    return;
+  }
+
+  // /api/history/fleet/:id/summary
+  if (url.pathname.match(/^\/api\/history\/fleet\/[^/]+\/summary$/)) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      id: FLEET_ID, fc_name: 'MockFC', member_count: pilots.length,
+      total_damage: 4500000, created_at: new Date(Date.now() - 3600000).toISOString(),
+      closed_at: new Date().toISOString(), duration_min: 60,
+      members: pilots.map(p => ({ characterId: p.charId, characterName: p.name })),
+    }));
+    return;
+  }
+
+  // /api/history/fleet/:id/timeline
+  if (url.pathname.match(/^\/api\/history\/fleet\/[^/]+\/timeline$/)) {
+    const now = Date.now();
+    const tl = [];
+    for (let i = 0; i < 120; i++) {
+      tl.push({ bucket_time: new Date(now - (120 - i) * 30000).toISOString(), avg_total_dps: Math.floor(4000 + Math.random() * 2000) });
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(tl));
+    return;
+  }
+
+  // /api/history/fleet/:id/presence
+  if (url.pathname.match(/^\/api\/history\/fleet\/[^/]+\/presence$/)) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify([]));
+    return;
+  }
+
+  // /api/history/fleet/:id/participation
+  if (url.pathname.match(/^\/api\/history\/fleet\/[^/]+\/participation$/)) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ members: pilots.map(p => ({
+      characterName: p.name, shipName: p.ship, totalDamage: Math.floor(rand(50000, 500000)),
+      nonCombatPct: p.role === 'logistics' ? 100 : 0, status: 'participant', reason: null,
+    })) }));
+    return;
+  }
+
+  // /api/history/fleet/:id/events
+  if (url.pathname.match(/^\/api\/history\/fleet\/[^/]+\/events/)) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ total: 0, rows: [] }));
+    return;
+  }
+
+  // /api/history/fleet/:id/snapshots/:charId
+  const snapMatch = url.pathname.match(/^\/api\/history\/fleet\/[^/]+\/snapshots\/(\d+)$/);
+  if (snapMatch) {
+    const charId = Number(snapMatch[1]);
+    const pilot = pilots.find(p => p.charId === charId) ?? pilots[0];
+    const now = Date.now();
+    const snaps = [];
+    for (let i = 0; i < 60; i++) {
+      const dps = pilot.role === 'combat' ? Math.floor(rand(400, 900)) : 0;
+      snaps.push({
+        recorded_at: new Date(now - (60 - i) * 5000).toISOString(),
+        dps_out: dps, dps_in: Math.floor(rand(0, 100)),
+        logi_out: pilot.role === 'logistics' ? Math.floor(rand(200, 500)) : 0,
+        logi_in: 0, cap_transferred: 0, cap_received: 0,
+        cap_damage_out: 0, cap_damage_in: 0, mined: 0,
+        dmg_out_p50: Math.floor(dps * 0.8), dmg_out_p90: Math.floor(dps * 1.2),
+        dmg_out_p95: Math.floor(dps * 1.4), dmg_out_p99: Math.floor(dps * 1.8),
+        dmg_out_avg: dps, dmg_out_median: Math.floor(dps * 0.9),
+        ship_type_id: pilot.shipTypeId, solar_system_id: 30004759,
+        hit_quality_dist: null,
+      });
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(snaps));
+    return;
+  }
+
+  // /api/history/fleet/:id/snapshot-at
+  if (url.pathname.match(/^\/api\/history\/fleet\/[^/]+\/snapshot-at$/)) {
+    const rows = pilots.map(p => ({
+      character_id: p.charId, dps_out: p.role === 'combat' ? Math.floor(rand(400, 900)) : 0,
+      dps_in: Math.floor(rand(0, 100)), logi_out: p.role === 'logistics' ? Math.floor(rand(200, 500)) : 0,
+      logi_in: 0, cap_transferred: 0, cap_received: 0, cap_damage_out: 0, cap_damage_in: 0, mined: 0,
+      ship_type_id: p.shipTypeId, solar_system_id: 30004759, hit_quality_dist: null,
+      recorded_at: new Date().toISOString(),
+    }));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(rows));
+    return;
+  }
+
+  // /api/history/fleet/:id/peer-median/:charId
+  const peerMedianMatch = url.pathname.match(/^\/api\/history\/fleet\/[^/]+\/peer-median\/(\d+)$/);
+  if (peerMedianMatch) {
+    const now = Date.now();
+    const points = [];
+    for (let i = 0; i < 60; i++) {
+      points.push({
+        recorded_at: new Date(now - (60 - i) * 5000).toISOString(),
+        ship_type_id: 12015,
+        median_dps: Math.floor(500 + Math.random() * 200),
+        peer_count: 4,
+      });
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(points));
+    return;
+  }
+
   // Catch-all
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ message: 'Not found' }));

@@ -5,20 +5,47 @@ const NON_COMBAT_GROUP_IDS = [29, 31, 22, 380, 513, 902, 463, 543, 941, 1022, 23
 
 export async function getFleetList({ page = 1, limit = 20 } = {}) {
   const offset = (page - 1) * limit;
-  const { rows } = await query(
-    `SELECT
-        fs.id, fs.name, fs.created_at, fs.closed_at, fs.is_open,
-        COUNT(DISTINCT fm.character_id)::int AS member_count,
-        ROUND(AVG(ps.dps_out)::numeric, 2)   AS avg_dps_out
-     FROM fleet_sessions fs
-     LEFT JOIN fleet_members fm ON fm.fleet_session_id = fs.id
-     LEFT JOIN pilot_snapshots ps ON ps.fleet_session_id = fs.id
-     GROUP BY fs.id
-     ORDER BY fs.created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset],
-  );
-  return rows;
+
+  const [{ rows }, { rows: countRows }] = await Promise.all([
+    query(
+      `WITH page AS (
+         SELECT id, name, created_at, closed_at, is_open
+           FROM fleet_sessions
+          ORDER BY created_at DESC
+          LIMIT $1 OFFSET $2
+       )
+       SELECT p.*,
+              members.member_count,
+              dps.avg_dps_out,
+              comp.ship_type_ids
+         FROM page p
+         LEFT JOIN LATERAL (
+           SELECT COUNT(DISTINCT fm.character_id)::int AS member_count
+             FROM fleet_members fm
+            WHERE fm.fleet_session_id = p.id
+         ) members ON true
+         LEFT JOIN LATERAL (
+           SELECT ROUND(AVG(ps.dps_out)::numeric, 2) AS avg_dps_out
+             FROM pilot_snapshots ps
+            WHERE ps.fleet_session_id = p.id
+         ) dps ON true
+         LEFT JOIN LATERAL (
+           SELECT array_agg(latest.ship_type_id) AS ship_type_ids
+             FROM (
+               SELECT DISTINCT ON (mp.character_id) mp.ship_type_id
+                 FROM member_presence mp
+                WHERE mp.fleet_session_id = p.id
+                  AND mp.ship_type_id IS NOT NULL
+                ORDER BY mp.character_id, mp.recorded_at DESC
+             ) latest
+         ) comp ON true
+        ORDER BY p.created_at DESC`,
+      [limit, offset],
+    ),
+    query(`SELECT COUNT(*)::int AS total FROM fleet_sessions`),
+  ]);
+
+  return { fleets: rows, total: countRows[0]?.total ?? 0 };
 }
 
 export async function getFleetSummary(fleetSessionId: string) {

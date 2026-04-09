@@ -16,6 +16,11 @@ export interface PercentilePoint {
   avg: number;
 }
 
+export interface PeerMedianPoint {
+  ts: number;
+  median: number;
+}
+
 const props = defineProps<{ points: PercentilePoint[] }>();
 
 const el = ref<HTMLDivElement | null>(null);

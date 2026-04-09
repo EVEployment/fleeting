@@ -59,6 +59,42 @@ export async function getForPilot(fleetSessionId: string, characterId: number) {
  * Get the most recent snapshot for each pilot at or before a given timestamp.
  * Used by history replay scrub to reconstruct fleet state at a point in time.
  */
+/**
+ * For each of the selected pilot's snapshots, find the as-of peer median DPS
+ * among same-ship-type pilots. Uses a 15s freshness window to avoid stale data.
+ * Excludes pilots with dps_out < 5 (MIN_ACTIVE_DPS).
+ */
+export async function getPeerMedianForPilot(fleetSessionId: string, characterId: number) {
+  const { rows } = await query(
+    `WITH anchor AS (
+       SELECT recorded_at, ship_type_id
+         FROM pilot_snapshots
+        WHERE fleet_session_id = $1 AND character_id = $2
+        ORDER BY recorded_at
+     )
+     SELECT a.recorded_at,
+            a.ship_type_id,
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY peer.dps_out) AS median_dps,
+            COUNT(peer.*)::int AS peer_count
+       FROM anchor a
+       LEFT JOIN LATERAL (
+         SELECT DISTINCT ON (ps.character_id) ps.dps_out
+           FROM pilot_snapshots ps
+          WHERE ps.fleet_session_id = $1
+            AND ps.character_id != $2
+            AND ps.ship_type_id = a.ship_type_id
+            AND ps.recorded_at <= a.recorded_at
+            AND ps.recorded_at >= a.recorded_at - INTERVAL '15 seconds'
+            AND ps.dps_out >= 5
+          ORDER BY ps.character_id, ps.recorded_at DESC
+       ) peer ON true
+      GROUP BY a.recorded_at, a.ship_type_id
+      ORDER BY a.recorded_at`,
+    [fleetSessionId, characterId],
+  );
+  return rows;
+}
+
 export async function getFleetSnapshotAt(fleetSessionId: string, at: Date) {
   const { rows } = await query(
     `SELECT DISTINCT ON (character_id)

@@ -34,6 +34,17 @@
         <Column field="duration_min"  :header="t('col.duration')" style="min-width:80px">
           <template #body="{ data }">{{ data.duration_min != null ? t('history.durationMin', { count: data.duration_min }) : '—' }}</template>
         </Column>
+        <Column field="ship_type_ids" :header="t('col.composition')" style="min-width:180px">
+          <template #body="{ data }">
+            <template v-if="data.ship_type_ids?.length">
+              <span v-for="(r, i) in summarizeComposition(data.ship_type_ids)" :key="r.label"
+                    :style="{ color: r.color, fontSize: '0.85rem' }">
+                {{ r.count }} {{ r.label }}<span v-if="i < summarizeComposition(data.ship_type_ids).length - 1" style="color:#666"> · </span>
+              </span>
+            </template>
+            <span v-else style="color:#666">—</span>
+          </template>
+        </Column>
       </DataTable>
     </main>
 
@@ -58,6 +69,8 @@ import { api, getMe, type MeResponse } from '@/api/client';
 import { clearMeCache } from '@/router';
 import AppNav from '@/components/AppNav.vue';
 import FleetReplayView from './FleetReplayView.vue';
+import { shipTypes } from '@/lib/shipTypes';
+import { classifyShipRole, type ShipRole } from '@/lib/shipRoles';
 
 const me             = ref<MeResponse | null>(null);
 const fleets         = ref<any[]>([]);
@@ -78,6 +91,27 @@ async function loadFleets(page = 1) {
 }
 
 function openFleet(id: string) { selectedFleetId.value = id; }
+
+const ROLE_DISPLAY: { role: ShipRole; label: string; color: string }[] = [
+  { role: 'combat',     label: 'DPS',  color: '#c0392b' },
+  { role: 'logistics',  label: 'LOGI', color: '#27ae60' },
+  { role: 'command',    label: 'CMD',  color: '#2980b9' },
+  { role: 'tackle',     label: 'TCKL', color: '#8e44ad' },
+  { role: 'ewar',       label: 'EWAR', color: '#d4ac0d' },
+  { role: 'support',    label: 'SUP',  color: '#5b6f8e' },
+];
+
+function summarizeComposition(shipTypeIds: number[]): { label: string; count: number; color: string }[] {
+  const counts = new Map<ShipRole, number>();
+  for (const typeId of shipTypeIds) {
+    const groupId = shipTypes.get(typeId)?.groupId;
+    const role = groupId !== undefined ? classifyShipRole(groupId) : 'combat';
+    counts.set(role, (counts.get(role) ?? 0) + 1);
+  }
+  return ROLE_DISPLAY
+    .filter(r => (counts.get(r.role) ?? 0) > 0)
+    .map(r => ({ label: r.label, count: counts.get(r.role)!, color: r.color }));
+}
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleString();
