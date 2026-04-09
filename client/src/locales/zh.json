@@ -121,6 +121,12 @@
     "discovering": "检测中…"
   },
 
+  "character": {
+    "online": "在线",
+    "offline": "离线",
+    "checking": "检测中…"
+  },
+
   "pilot": {
     "selectCharacter": "选择角色",
     "openLogs":  "打开日志",

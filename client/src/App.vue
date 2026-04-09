@@ -14,6 +14,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
+import { getMe } from '@/api/client';
+import { useCharacterStatus } from '@/composables/useCharacterStatus';
 
 const RETRY_INTERVAL_S = 3;
 
@@ -21,6 +23,8 @@ const backendReady = ref(false);
 const healthMsg    = ref('Connecting to server…');
 
 let timer: ReturnType<typeof setInterval> | null = null;
+
+const { start: startCharacterStatus, stop: stopCharacterStatus } = useCharacterStatus();
 
 async function checkHealth(): Promise<boolean> {
   try {
@@ -31,11 +35,21 @@ async function checkHealth(): Promise<boolean> {
   }
 }
 
+async function tryStartCharacterPolling() {
+  try {
+    const me = await getMe();
+    if (me) startCharacterStatus(me);
+  } catch {
+    // Not authenticated — individual pages handle the redirect.
+  }
+}
+
 async function poll() {
   const ok = await checkHealth();
   if (ok) {
     backendReady.value = true;
     if (timer) { clearInterval(timer); timer = null; }
+    await tryStartCharacterPolling();
   } else {
     healthMsg.value = 'Server not reachable — waiting…';
   }
@@ -51,6 +65,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (timer) clearInterval(timer);
+  stopCharacterStatus();
 });
 </script>
 

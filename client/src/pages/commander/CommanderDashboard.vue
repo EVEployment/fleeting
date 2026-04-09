@@ -30,10 +30,26 @@
               <template #chip="{ value }">
                 <span class="char-chip" :title="charNameById(value)">{{ charNameById(value) }}</span>
               </template>
-              <!-- Option row: character name + fleet status on separate lines -->
+              <!-- Option row: character name + online status + fleet status on separate lines -->
               <template #option="{ option }">
                 <div class="char-option">
-                  <span class="char-option-name">{{ charNameOf(option) }}</span>
+                  <div class="char-option-top">
+                    <span class="char-option-name">{{ charNameOf(option) }}</span>
+                    <span
+                      class="char-option-online"
+                      :class="{
+                        'status-online':  onlineOf(option) === true,
+                        'status-offline': onlineOf(option) === false,
+                        'status-unknown': onlineOf(option) === null,
+                      }"
+                    >
+                      {{
+                        onlineOf(option) === true  ? t('character.online')  :
+                        onlineOf(option) === false ? t('character.offline') :
+                        t('character.checking')
+                      }}
+                    </span>
+                  </div>
                   <span class="char-option-fleet" :class="{ muted: !fleetStatusOf(option) }">{{ fleetStatusOf(option) || t('commander.noFleet') }}</span>
                 </div>
               </template>
@@ -113,10 +129,11 @@ import Toast from 'primevue/toast';
 import InputNumber from 'primevue/inputnumber';
 import MultiSelect from 'primevue/multiselect';
 import { useTranslation } from 'i18next-vue';
-import { getMe, api, type MeResponse } from '@/api/client';
+import { getMe, type MeResponse } from '@/api/client';
 import { clearMeCache } from '@/router';
 import { useFleetSSE } from '@/composables/useFleetSSE';
 import { useAlertRule } from '@/composables/useAlertRule';
+import { useCharacterStatus } from '@/composables/useCharacterStatus';
 import { classifyShipRole, isDpsExpected } from '@/lib/shipRoles';
 import { MIN_ACTIVE_DPS } from '@/lib/peerEfficiency';
 import { computeFocus } from '@/lib/focusAnalysis';
@@ -135,17 +152,11 @@ const me             = ref<MeResponse | null>(null);
 const isWarCommander = ref(false);
 const windowSec      = ref(60);
 
-// ── Per-character fleet discovery ─────────────────────────────────────────────
-/** fleetId per characterId discovered via ESI (null = no fleet found) */
-const charFleets  = reactive<Record<number, string | null>>({});
-/** loading spinner per characterId */
-const discovering = reactive<Record<number, boolean>>({});
+const { charStatus, start: startCharacterStatus, refresh: refreshCharacterStatus } = useCharacterStatus();
+
+// ── Per-character fleet session from app-level poller ─────────────────────────
 /** Characters currently selected for monitoring (multi-select) */
 const selectedFcCharIds = ref<number[]>([]);
-
-const anyDiscovering = computed(() =>
-  selectedFcCharIds.value.some(id => discovering[id]),
-);
 
 function charNameById(id: number): string {
   return me.value?.characters.find(c => c.id === id)?.name ?? String(id);
@@ -153,11 +164,13 @@ function charNameById(id: number): string {
 
 const characterOptions = computed(() =>
   (me.value?.characters ?? []).map(c => {
-    const fleetId = charFleets[c.id];
-    const fleetStatus = fleetId
-      ? t('commander.fleetStatus', { id: fleetId.slice(0, 8) })
-      : discovering[c.id] ? t('commander.discovering') : '';
-    return { label: c.name, fleetStatus, value: c.id };
+    const status  = charStatus[c.id];
+    const session = status?.session;
+    const fleetStatus = session
+      ? t('commander.fleetStatus', { id: session.id.slice(0, 8) })
+      : (status?.online === null ? t('commander.discovering') : '');
+    const online  = status?.online ?? null;
+    return { label: c.name, fleetStatus, online, value: c.id };
   }),
 );
 
@@ -169,33 +182,25 @@ function charNameOf(option: { label: string }): string {
 function fleetStatusOf(option: { fleetStatus: string }): string {
   return option.fleetStatus;
 }
-
-async function discoverForChar(charId: number) {
-  discovering[charId] = true;
-  try {
-    const data = await api.get<{ fleet?: { id: string } | null }>(`/api/fleet/discover?characterId=${charId}`);
-    charFleets[charId] = data.fleet?.id ?? null;
-  } catch {
-    charFleets[charId] = null;
-  } finally {
-    discovering[charId] = false;
-  }
-}
-
-async function discoverAllChars() {
-  await Promise.all((me.value?.characters ?? []).map(c => discoverForChar(c.id)));
+/** Extract online status from option object. */
+function onlineOf(option: { online: boolean | null }): boolean | null {
+  return option.online;
 }
 
 function rediscoverSelected() {
-  Promise.all(selectedFcCharIds.value.map(discoverForChar));
+  refreshCharacterStatus(selectedFcCharIds.value);
 }
 
-// ── Channel list: union of all selected characters' fleet IDs ─────────────────
+const anyDiscovering = computed(() =>
+  selectedFcCharIds.value.some(id => charStatus[id]?.online === null),
+);
+
+// ── Channel list: union of all selected characters' fleet session IDs ─────────
 const channelIds = computed<string[]>(() => {
   const ids = new Set<string>();
   for (const charId of selectedFcCharIds.value) {
-    const fid = charFleets[charId];
-    if (fid) ids.add(fid);
+    const sessionId = charStatus[charId]?.session?.id;
+    if (sessionId) ids.add(sessionId);
   }
   return [...ids];
 });
@@ -318,9 +323,10 @@ onMounted(async () => {
   try {
     me.value = await getMe();
     isWarCommander.value = me.value.roles.includes('war_commander');
+    // Start app-level character status polling (deduplicates if App.vue already started it).
+    startCharacterStatus(me.value);
     // Default to no selected character; user opts in to monitored characters.
     selectedFcCharIds.value = [];
-    await discoverAllChars();
   } catch {
     clearMeCache();
     window.location.href = '/auth/login';
@@ -419,6 +425,12 @@ main { padding: 1rem 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
   gap: 0.1rem;
   min-width: 0;
 }
+.char-option-top {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
 .char-option-name {
   font-weight: 600;
   font-size: 0.88rem;
@@ -427,6 +439,13 @@ main { padding: 1rem 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.char-option-online {
+  font-size: 0.72rem;
+  flex-shrink: 0;
+}
+.status-online  { color: #4ade80; }
+.status-offline { color: #f87171; }
+.status-unknown { color: #5b6f8e; font-style: italic; }
 .char-option-fleet {
   font-size: 0.76rem;
   color: #4fc3d1;
